@@ -1,0 +1,10 @@
+[package]
+name = "littlefs"
+version = "0.1.0"
+authors = ["Brandon Edens <brandonedens@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+littlefs-sys = { version = "0.1", path = "../littlefs-sys" }
+libc = "0.2.43"
+bitflags = "1.0.4"
