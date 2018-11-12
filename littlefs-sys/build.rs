@@ -15,6 +15,7 @@ use std::path::PathBuf;
 fn main() {
     cc::Build::new()
         .file("lfs.c")
+        .file("lfs_util.c")
         .compile("lfs-sys");
 
     let bindings = bindgen::Builder::default()
