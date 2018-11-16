@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+#![allow(unused_variables)]
 #![no_std]
 
 #[macro_use]
@@ -11,6 +13,8 @@ const LOOKAHEAD: usize = 128;
 
 use core::{cmp, mem, slice};
 use littlefs_sys as lfs;
+
+const NAME_MAX_LEN: usize = lfs::LFS_NAME_MAX as usize;
 
 #[derive(Debug)]
 pub enum FsError {
@@ -74,8 +78,44 @@ fn lfs_to_usize_fserror(lfs_error: lfs::lfs_error) -> Result<usize, FsError> {
 
 enum Whence {
     Set = 0,
-    Cu = 1,
+    Cur = 1,
     End = 2,
+}
+
+#[derive(Debug, PartialEq)]
+enum EntryType {
+    RegularFile,
+    Directory,
+}
+
+struct Info {
+    entry_type: EntryType,
+    size: usize,
+    name: [char; NAME_MAX_LEN],
+}
+
+// FIXME
+impl From<lfs::lfs_info> for Info {
+    fn from(lfs_info: lfs::lfs_info) -> Info {
+        let entry_type = match lfs_info.type_ as u32 {
+            lfs::lfs_type_LFS_TYPE_REG => EntryType::RegularFile,
+            lfs::lfs_type_LFS_TYPE_DIR => EntryType::Directory,
+            _ => {
+                unreachable!();
+            }
+        };
+
+        let len = unsafe { libc::strlen(lfs_info.name.as_ptr()) };
+        let name = unsafe { slice::from_raw_parts(lfs_info.name.as_ptr() as *const char, len) };
+
+        let mut info = Info {
+            entry_type: entry_type,
+            size: lfs_info.size as usize,
+            name: ['\0'; NAME_MAX_LEN],
+        };
+        info.name[..len].copy_from_slice(&name[..len]);
+        info
+    }
 }
 
 bitflags! {
@@ -93,6 +133,10 @@ bitflags! {
 struct File {
     buffer: [u8; PROG_SIZE],
     inner: lfs::lfs_file_t,
+}
+
+struct Dir {
+    inner: lfs::lfs_dir_t,
 }
 
 impl Default for File {
@@ -148,28 +192,49 @@ impl<T: Storage> LittleFs<T> {
 
     /// Remove a file or directory.
     pub fn remove(&mut self, path: &str) -> Result<(), FsError> {
-        let mut cstr = [0u8; lfs::LFS_NAME_MAX as usize];
-        cstr.copy_from_slice(&path.as_bytes()[..]);
+        let mut cstr = [0u8; NAME_MAX_LEN + 1];
+        let len = cmp::min(NAME_MAX_LEN, path.len());
+        cstr[..len].copy_from_slice(&path.as_bytes()[..len]);
         let res =
             unsafe { lfs::lfs_remove(&mut self.lfs, &cstr as *const _ as *const libc::c_char) };
         lfs_to_fserror(res)
     }
 
-    /// Rename of move a file or directory.
+    /// Rename or move a file or directory.
     pub fn rename(&mut self, old_path: &str, new_path: &str) -> Result<(), FsError> {
-        let mut oldpath = [0u8; lfs::LFS_NAME_MAX as usize];
-        let oldpathlen = cmp::min(lfs::LFS_NAME_MAX as usize - 1, old_path.len());
-        let mut newpath = [0u8; lfs::LFS_NAME_MAX as usize];
-        let newpathlen = cmp::min(lfs::LFS_NAME_MAX as usize - 1, new_path.len());
+        let mut oldpath = [0u8; NAME_MAX_LEN + 1];
+        let oldpathlen = cmp::min(NAME_MAX_LEN, old_path.len());
+        let mut newpath = [0u8; NAME_MAX_LEN + 1];
+        let newpathlen = cmp::min(NAME_MAX_LEN, new_path.len());
         oldpath[..oldpathlen].copy_from_slice(&old_path.as_bytes()[..oldpathlen]);
         newpath[..newpathlen].copy_from_slice(&new_path.as_bytes()[..newpathlen]);
         let res = unsafe {
             lfs::lfs_rename(
                 &mut self.lfs,
-                &oldpath as *const _ as *const libc::c_char,
-                &newpath as *const _ as *const libc::c_char,
+                oldpath.as_ptr() as *const libc::c_char,
+                newpath.as_ptr() as *const libc::c_char,
             )
         };
+        lfs_to_fserror(res)
+    }
+
+    /// Populate info for file or directory at specified path.
+    pub fn stat(&mut self, path: &str, info: &mut Info) -> Result<(), FsError> {
+        let mut lfs_info: lfs::lfs_info = unsafe { mem::uninitialized() };
+
+        let mut cstr = [0u8; NAME_MAX_LEN + 1];
+        let len = cmp::min(NAME_MAX_LEN, path.len());
+        cstr[..len].copy_from_slice(&path.as_bytes()[..len]);
+
+        let res = unsafe {
+            lfs::lfs_stat(
+                &mut self.lfs,
+                cstr.as_ptr() as *const libc::c_char,
+                &mut lfs_info as *mut _,
+            )
+        };
+
+        *info = lfs_info.into();
         lfs_to_fserror(res)
     }
 
@@ -180,17 +245,17 @@ impl<T: Storage> LittleFs<T> {
         path: &str,
         flags: FileOpenFlags,
     ) -> Result<(), FsError> {
-        let mut cstr_path = [0u8; lfs::LFS_NAME_MAX as usize];
-        let len = cmp::min(lfs::LFS_NAME_MAX as usize - 1, path.len());
+        let mut cstr_path = [0u8; NAME_MAX_LEN];
+        let len = cmp::min(NAME_MAX_LEN - 1, path.len());
         cstr_path[..len].copy_from_slice(&path.as_bytes()[..len]);
         let file_cfg = lfs::lfs_file_config {
-            buffer: &mut file.buffer as *mut _ as *mut libc::c_void,
+            buffer: file.buffer.as_mut_ptr() as *mut libc::c_void,
         };
         let res = unsafe {
             lfs::lfs_file_opencfg(
                 &mut self.lfs,
                 &mut file.inner,
-                &cstr_path as *const _ as *const libc::c_char,
+                cstr_path.as_ptr() as *const libc::c_char,
                 flags.bits() as i32,
                 &file_cfg,
             )
@@ -198,15 +263,17 @@ impl<T: Storage> LittleFs<T> {
         lfs_to_fserror(res)
     }
 
-    // TODO file_opencfg.
-
     /// Close out the given file.
     pub fn file_close(&mut self, mut file: File) -> Result<(), FsError> {
         let res = unsafe { lfs::lfs_file_close(&mut self.lfs, &mut file.inner) };
         lfs_to_fserror(res)
     }
 
-    // TODO Synchronize file state to storage.
+    /// Synchronize file contents to storage.
+    pub fn file_sync(&mut self, mut file: File) -> Result<(), FsError> {
+        let res = unsafe { lfs::lfs_file_sync(&mut self.lfs, &mut file.inner) };
+        lfs_to_fserror(res)
+    }
 
     /// Read data from file.
     pub fn file_read(&mut self, file: &mut File, buf: &mut [u8]) -> Result<usize, FsError> {
@@ -221,6 +288,7 @@ impl<T: Storage> LittleFs<T> {
         lfs_to_usize_fserror(res)
     }
 
+    /// Write data to file.
     pub fn file_write(&mut self, file: &mut File, buf: &[u8]) -> Result<usize, FsError> {
         let res = unsafe {
             lfs::lfs_file_write(
@@ -233,26 +301,98 @@ impl<T: Storage> LittleFs<T> {
         lfs_to_usize_fserror(res)
     }
 
+    /// Change position of subsequent read / write in file.
     pub fn file_seek(
         &mut self,
         file: &mut File,
-        off: usize,
+        off: isize,
         whence: Whence,
     ) -> Result<(), FsError> {
-        Ok(())
+        let res = unsafe {
+            lfs::lfs_file_seek(&mut self.lfs, &mut file.inner, off as i32, whence as i32)
+        };
+        lfs_to_fserror(res)
     }
 
     pub fn file_truncate(&mut self, file: &mut File, size: usize) -> Result<(), FsError> {
-        Ok(())
+        let res = unsafe { lfs::lfs_file_truncate(&mut self.lfs, &mut file.inner, size as u32) };
+        lfs_to_fserror(res)
     }
 
+    /// Tell current position of handle within the file.
+    pub fn file_tell(&mut self, file: &mut File) -> Result<usize, FsError> {
+        let res = unsafe { lfs::lfs_file_tell(&mut self.lfs, &mut file.inner) };
+        lfs_to_usize_fserror(res)
+    }
+
+    /// Rewind file handle to the start of the file.
+    pub fn file_rewind(&mut self, file: &mut File) -> Result<(), FsError> {
+        let res = unsafe { lfs::lfs_file_rewind(&mut self.lfs, &mut file.inner) };
+        lfs_to_fserror(res)
+    }
+
+    /// Return total number of bytes in file.
+    pub fn file_size(&mut self, file: &mut File) -> Result<usize, FsError> {
+        let res = unsafe { lfs::lfs_file_size(&mut self.lfs, &mut file.inner) };
+        lfs_to_usize_fserror(res)
+    }
+
+    /// Create a new directory.
     pub fn mkdir(&mut self, path: &str) -> Result<(), FsError> {
-        let mut cstr_path = [0u8; lfs::LFS_NAME_MAX as usize];
-        let len = cmp::min(lfs::LFS_NAME_MAX as usize - 1, path.len());
+        let mut cstr_path = [0u8; NAME_MAX_LEN + 1];
+        let len = cmp::min(NAME_MAX_LEN, path.len());
         cstr_path[..len].copy_from_slice(&path.as_bytes()[..len]);
 
         let res =
-            unsafe { lfs::lfs_mkdir(&mut self.lfs, &cstr_path as *const _ as *const libc::c_char) };
+            unsafe { lfs::lfs_mkdir(&mut self.lfs, cstr_path.as_ptr() as *const libc::c_char) };
+        lfs_to_fserror(res)
+    }
+
+    /// Open a directory.
+    pub fn dir_open(&mut self, dir: &mut Dir, path: &str) -> Result<(), FsError> {
+        let mut cstr_path = [0u8; NAME_MAX_LEN + 1];
+        let len = cmp::min(NAME_MAX_LEN, path.len());
+        cstr_path[..len].copy_from_slice(&path.as_bytes()[..len]);
+
+        let res = unsafe {
+            lfs::lfs_dir_open(
+                &mut self.lfs,
+                &mut dir.inner,
+                cstr_path.as_ptr() as *const libc::c_char,
+            )
+        };
+        lfs_to_fserror(res)
+    }
+
+    /// Close a directory.
+    pub fn dir_close(&mut self, dir: &mut Dir) -> Result<(), FsError> {
+        let res = unsafe { lfs::lfs_dir_close(&mut self.lfs, &mut dir.inner) };
+        lfs_to_fserror(res)
+    }
+
+    /// Read contents of a directory.
+    pub fn dir_read(&mut self, dir: &mut Dir, info: &mut Info) -> Result<(), FsError> {
+        let mut lfs_info: lfs::lfs_info = unsafe { mem::uninitialized() };
+        let res = unsafe { lfs::lfs_dir_read(&mut self.lfs, &mut dir.inner, &mut lfs_info) };
+        *info = lfs_info.into();
+        lfs_to_fserror(res)
+    }
+
+    /// Change the position within the directory.
+    pub fn dir_seek(&mut self, dir: &mut Dir, offset: isize) -> Result<(), FsError> {
+        let res = unsafe { lfs::lfs_dir_seek(&mut self.lfs, &mut dir.inner, offset as u32) };
+        lfs_to_fserror(res)
+    }
+
+    /// Report position within the directory.
+    pub fn dir_tell(&mut self, dir: &mut Dir) -> Result<usize, FsError> {
+        let res = unsafe { lfs::lfs_dir_tell(&mut self.lfs, &mut dir.inner) };
+        lfs_to_usize_fserror(res)
+    }
+
+    /// Rewrite directory handle back to start of directory.
+    pub fn dir_rewind(&mut self, dir: &mut Dir) -> Result<(), FsError> {
+        let res = unsafe { lfs::lfs_dir_rewind(&mut self.lfs, &mut dir.inner) };
         lfs_to_fserror(res)
     }
 
@@ -437,7 +577,7 @@ mod tests {
         .unwrap();
         let sz = lfs.file_write(&mut file, b"hello world!").unwrap();
         assert_ne!(sz, 0);
-        lfs.file_close(file);
+        lfs.file_close(file).unwrap();
         lfs.unmount().unwrap();
     }
 
@@ -456,7 +596,11 @@ mod tests {
         .unwrap();
         let write_sz = lfs.file_write(&mut file, b"hello world!").unwrap();
         assert_ne!(write_sz, 0);
-        lfs.file_close(file);
+
+        let file_sz = lfs.file_size(&mut file).unwrap();
+        assert_eq!(file_sz, write_sz);
+
+        lfs.file_close(file).unwrap();
 
         let mut file = Default::default();
         lfs.file_open(&mut file, "/foo.txt", FileOpenFlags::RDWR)
@@ -464,11 +608,114 @@ mod tests {
         let mut buf = [0u8; 32];
         let read_sz = lfs.file_read(&mut file, &mut buf).unwrap();
         assert_ne!(read_sz, 0);
-        lfs.file_close(file);
+        lfs.file_close(file).unwrap();
         lfs.unmount().unwrap();
 
         assert_eq!(read_sz, write_sz);
 
         assert_eq!(&buf[..read_sz], b"hello world!");
+    }
+
+    #[test]
+    fn test_lfs_seek() {
+        let storage = RamStorage::default();
+        let mut lfs = LittleFs::new(storage);
+        lfs.format().unwrap();
+        lfs.mount().unwrap();
+        let mut file = Default::default();
+        lfs.file_open(
+            &mut file,
+            "/foo.txt",
+            FileOpenFlags::RDWR | FileOpenFlags::CREAT,
+        )
+        .unwrap();
+        let write_sz = lfs.file_write(&mut file, b"hello world!").unwrap();
+        assert_ne!(write_sz, 0);
+        lfs.file_close(file).unwrap();
+
+        let mut file = Default::default();
+        lfs.file_open(&mut file, "/foo.txt", FileOpenFlags::RDWR)
+            .unwrap();
+        // Seek forward pass the hello
+        lfs.file_seek(&mut file, 6, Whence::Set).unwrap();
+        let mut buf = [0u8; 32];
+        let read_sz = lfs.file_read(&mut file, &mut buf).unwrap();
+        assert_ne!(read_sz, 0);
+        lfs.file_close(file).unwrap();
+
+        lfs.unmount().unwrap();
+
+        assert_eq!(read_sz, 6);
+        assert_eq!(&buf[..6], b"world!");
+    }
+
+    #[test]
+    fn test_lfs_truncate() {
+        let storage = RamStorage::default();
+        let mut lfs = LittleFs::new(storage);
+        lfs.format().unwrap();
+        lfs.mount().unwrap();
+        let mut file = Default::default();
+        lfs.file_open(
+            &mut file,
+            "/foo.txt",
+            FileOpenFlags::RDWR | FileOpenFlags::CREAT,
+        )
+        .unwrap();
+        let write_sz = lfs.file_write(&mut file, b"hello world!").unwrap();
+        assert_ne!(write_sz, 0);
+
+        lfs.file_truncate(&mut file, 0).unwrap();
+        lfs.file_close(file).unwrap();
+
+        let mut file = Default::default();
+        lfs.file_open(&mut file, "/foo.txt", FileOpenFlags::RDWR)
+            .unwrap();
+        let mut buf = [0u8; 32];
+        let read_sz = lfs.file_read(&mut file, &mut buf).unwrap();
+        assert_eq!(read_sz, 0);
+        lfs.file_close(file).unwrap();
+
+        lfs.unmount().unwrap();
+    }
+
+    #[test]
+    fn test_lfs_tell() {
+        let storage = RamStorage::default();
+        let mut lfs = LittleFs::new(storage);
+        lfs.format().unwrap();
+        lfs.mount().unwrap();
+        let mut file = Default::default();
+        lfs.file_open(
+            &mut file,
+            "/foo.txt",
+            FileOpenFlags::RDWR | FileOpenFlags::CREAT,
+        )
+        .unwrap();
+        let write_sz = lfs.file_write(&mut file, b"hello world!").unwrap();
+        assert_ne!(write_sz, 0);
+
+        let tell_sz = lfs.file_tell(&mut file).unwrap();
+        assert_eq!(tell_sz, write_sz);
+
+        lfs.file_rewind(&mut file).unwrap();
+        let tell_sz = lfs.file_tell(&mut file).unwrap();
+        assert_eq!(tell_sz, 0);
+
+        lfs.file_close(file).unwrap();
+        lfs.unmount().unwrap();
+    }
+
+    #[test]
+    fn test_lfs_info_into_info() {
+        let lfs_info = lfs::lfs_info {
+            type_: lfs::lfs_type_LFS_TYPE_REG as u8,
+            size: 4,
+            name: [0; (NAME_MAX_LEN) + 1],
+        };
+
+        let info: Info = lfs_info.into();
+        assert_eq!(info.entry_type, EntryType::RegularFile);
+        assert_eq!(info.size, 4);
     }
 }
