@@ -14,12 +14,12 @@ use std::path::PathBuf;
 
 fn main() {
     cc::Build::new()
-        .file("lfs.c")
-        .file("lfs_util.c")
+        .file("littlefs/lfs.c")
+        .file("littlefs/lfs_util.c")
         .compile("lfs-sys");
 
     let bindings = bindgen::Builder::default()
-        .header("lfs.h")
+        .header("littlefs/lfs.h")
         .use_core()
         .ctypes_prefix("libc")
         .generate()
