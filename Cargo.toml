@@ -1,2 +1,7 @@
 [workspace]
 members = ["littlefs", "littlefs-sys"]
+
+[profile.release]
+codegen-units = 1
+debug = true
+lto = true
