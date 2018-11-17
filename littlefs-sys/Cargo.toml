@@ -5,7 +5,6 @@ authors = ["Brandon Edens <brandonedens@gmail.com>"]
 edition = "2018"
 license = "BSD-3-Clause"
 categories = ["embedded", "filesystem", "no-std"]
-license = "MIT OR Apache-2.0"
 repository = "https://github.com/brandonedens/rust-littlefs"
 
 [dependencies]
