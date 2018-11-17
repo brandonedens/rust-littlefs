@@ -21,7 +21,7 @@ fn main() {
     let bindings = bindgen::Builder::default()
         .header("littlefs/lfs.h")
         .use_core()
-        .ctypes_prefix("libc")
+        .ctypes_prefix("cty")
         .generate()
         .expect("Unable to generate bindings");
 

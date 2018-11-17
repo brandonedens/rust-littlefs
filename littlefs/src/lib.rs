@@ -11,7 +11,7 @@ const BLOCK_SIZE: usize = 4096;
 const BLOCK_COUNT: usize = 32;
 const LOOKAHEAD: usize = 128;
 
-use core::{cmp, mem, slice};
+use core::{cmp, mem, ptr, slice};
 use littlefs_sys as lfs;
 
 const NAME_MAX_LEN: usize = lfs::LFS_NAME_MAX as usize;
@@ -94,6 +94,25 @@ struct Info {
     name: [char; NAME_MAX_LEN],
 }
 
+fn strlen(txt: *const cty::c_char) -> usize {
+
+    if txt == ptr::null() {
+        return 0;
+    }
+
+    let mut i = 0;
+    let mut t = txt;
+    loop {
+        let v = unsafe { t.read() };
+        if v == ('\0' as cty::c_char) {
+            break;
+        }
+        t = unsafe { t.offset(1) };
+        i += 1;
+    }
+    return i;
+}
+
 // FIXME
 impl From<lfs::lfs_info> for Info {
     fn from(lfs_info: lfs::lfs_info) -> Info {
@@ -105,7 +124,7 @@ impl From<lfs::lfs_info> for Info {
             }
         };
 
-        let len = unsafe { libc::strlen(lfs_info.name.as_ptr()) };
+        let len = strlen(lfs_info.name.as_ptr());
         let name = unsafe { slice::from_raw_parts(lfs_info.name.as_ptr() as *const char, len) };
 
         let mut info = Info {
@@ -157,7 +176,7 @@ struct LittleFs<T: Storage> {
     lookahead_buffer: [u8; LOOKAHEAD / 8],
 }
 
-// self.lfs_config.context: self as *mut _ as *mut libc::c_void,
+// self.lfs_config.context: self as *mut _ as *mut cty::c_void,
 impl<T: Storage> LittleFs<T> {
     pub fn new(storage: T) -> Self {
         LittleFs {
@@ -196,7 +215,7 @@ impl<T: Storage> LittleFs<T> {
         let len = cmp::min(NAME_MAX_LEN, path.len());
         cstr[..len].copy_from_slice(&path.as_bytes()[..len]);
         let res =
-            unsafe { lfs::lfs_remove(&mut self.lfs, &cstr as *const _ as *const libc::c_char) };
+            unsafe { lfs::lfs_remove(&mut self.lfs, &cstr as *const _ as *const cty::c_char) };
         lfs_to_fserror(res)
     }
 
@@ -211,8 +230,8 @@ impl<T: Storage> LittleFs<T> {
         let res = unsafe {
             lfs::lfs_rename(
                 &mut self.lfs,
-                oldpath.as_ptr() as *const libc::c_char,
-                newpath.as_ptr() as *const libc::c_char,
+                oldpath.as_ptr() as *const cty::c_char,
+                newpath.as_ptr() as *const cty::c_char,
             )
         };
         lfs_to_fserror(res)
@@ -229,7 +248,7 @@ impl<T: Storage> LittleFs<T> {
         let res = unsafe {
             lfs::lfs_stat(
                 &mut self.lfs,
-                cstr.as_ptr() as *const libc::c_char,
+                cstr.as_ptr() as *const cty::c_char,
                 &mut lfs_info as *mut _,
             )
         };
@@ -249,13 +268,13 @@ impl<T: Storage> LittleFs<T> {
         let len = cmp::min(NAME_MAX_LEN - 1, path.len());
         cstr_path[..len].copy_from_slice(&path.as_bytes()[..len]);
         let file_cfg = lfs::lfs_file_config {
-            buffer: file.buffer.as_mut_ptr() as *mut libc::c_void,
+            buffer: file.buffer.as_mut_ptr() as *mut cty::c_void,
         };
         let res = unsafe {
             lfs::lfs_file_opencfg(
                 &mut self.lfs,
                 &mut file.inner,
-                cstr_path.as_ptr() as *const libc::c_char,
+                cstr_path.as_ptr() as *const cty::c_char,
                 flags.bits() as i32,
                 &file_cfg,
             )
@@ -281,7 +300,7 @@ impl<T: Storage> LittleFs<T> {
             lfs::lfs_file_read(
                 &mut self.lfs,
                 &mut file.inner,
-                buf.as_mut_ptr() as *mut libc::c_void,
+                buf.as_mut_ptr() as *mut cty::c_void,
                 buf.len() as u32,
             )
         };
@@ -294,7 +313,7 @@ impl<T: Storage> LittleFs<T> {
             lfs::lfs_file_write(
                 &mut self.lfs,
                 &mut file.inner,
-                buf.as_ptr() as *const libc::c_void,
+                buf.as_ptr() as *const cty::c_void,
                 buf.len() as u32,
             )
         };
@@ -344,7 +363,7 @@ impl<T: Storage> LittleFs<T> {
         cstr_path[..len].copy_from_slice(&path.as_bytes()[..len]);
 
         let res =
-            unsafe { lfs::lfs_mkdir(&mut self.lfs, cstr_path.as_ptr() as *const libc::c_char) };
+            unsafe { lfs::lfs_mkdir(&mut self.lfs, cstr_path.as_ptr() as *const cty::c_char) };
         lfs_to_fserror(res)
     }
 
@@ -358,7 +377,7 @@ impl<T: Storage> LittleFs<T> {
             lfs::lfs_dir_open(
                 &mut self.lfs,
                 &mut dir.inner,
-                cstr_path.as_ptr() as *const libc::c_char,
+                cstr_path.as_ptr() as *const cty::c_char,
             )
         };
         lfs_to_fserror(res)
@@ -399,7 +418,7 @@ impl<T: Storage> LittleFs<T> {
     /// Create instance of lfs configuration.
     fn create_lfs_config(&mut self) -> lfs::lfs_config {
         lfs::lfs_config {
-            context: self as *mut _ as *mut libc::c_void,
+            context: self as *mut _ as *mut cty::c_void,
             read: Some(<LittleFs<T>>::lfs_config_read),
             prog: Some(<LittleFs<T>>::lfs_config_prog),
             erase: Some(<LittleFs<T>>::lfs_config_erase),
@@ -409,9 +428,9 @@ impl<T: Storage> LittleFs<T> {
             block_size: BLOCK_SIZE as u32,
             block_count: BLOCK_COUNT as u32,
             lookahead: LOOKAHEAD as u32,
-            read_buffer: (&mut self.read_buffer) as *mut _ as *mut libc::c_void,
-            prog_buffer: (&mut self.prog_buffer) as *mut _ as *mut libc::c_void,
-            lookahead_buffer: (&mut self.lookahead_buffer) as *mut _ as *mut libc::c_void,
+            read_buffer: (&mut self.read_buffer) as *mut _ as *mut cty::c_void,
+            prog_buffer: (&mut self.prog_buffer) as *mut _ as *mut cty::c_void,
+            lookahead_buffer: (&mut self.lookahead_buffer) as *mut _ as *mut cty::c_void,
             file_buffer: core::ptr::null_mut(),
         }
     }
@@ -420,9 +439,9 @@ impl<T: Storage> LittleFs<T> {
         c: *const lfs::lfs_config,
         block: lfs::lfs_block_t,
         off: lfs::lfs_off_t,
-        buffer: *mut libc::c_void,
+        buffer: *mut cty::c_void,
         size: lfs::lfs_size_t,
-    ) -> libc::c_int {
+    ) -> cty::c_int {
         let littlefs: &mut LittleFs<T> = unsafe { mem::transmute((*c).context) };
         assert!(!c.is_null());
         let block_size = unsafe { c.read().block_size };
@@ -438,9 +457,9 @@ impl<T: Storage> LittleFs<T> {
         c: *const lfs::lfs_config,
         block: lfs::lfs_block_t,
         off: lfs::lfs_off_t,
-        buffer: *const libc::c_void,
+        buffer: *const cty::c_void,
         size: lfs::lfs_size_t,
-    ) -> libc::c_int {
+    ) -> cty::c_int {
         let littlefs: &mut LittleFs<T> = unsafe { mem::transmute((*c).context) };
         assert!(!c.is_null());
         let block_size = unsafe { c.read().block_size };
@@ -455,7 +474,7 @@ impl<T: Storage> LittleFs<T> {
     extern "C" fn lfs_config_erase(
         c: *const lfs::lfs_config,
         block: lfs::lfs_block_t,
-    ) -> libc::c_int {
+    ) -> cty::c_int {
         let littlefs: &mut LittleFs<T> = unsafe { mem::transmute((*c).context) };
         let off = block as usize * BLOCK_SIZE;
 
