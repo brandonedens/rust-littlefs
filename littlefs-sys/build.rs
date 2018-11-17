@@ -14,6 +14,7 @@ use std::path::PathBuf;
 
 fn main() {
     cc::Build::new()
+        .flag("-std=c11")
         .file("littlefs/lfs.c")
         .file("littlefs/lfs_util.c")
         .compile("lfs-sys");
