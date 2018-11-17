@@ -1,0 +1,24 @@
+language: rust
+
+rust:
+    beta
+    nightly
+
+script:
+  - cargo build --verbose --all
+  - cargo test --verbose --all
+
+cache: cargo
+
+before_cache:
+  - chmod -R a+r $HOME/.cargo;
+
+branches:
+  only:
+    - master
+    - staging
+    - trying
+
+notifications:
+  email:
+    on_success: never
