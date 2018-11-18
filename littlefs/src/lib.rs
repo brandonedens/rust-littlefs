@@ -89,13 +89,10 @@ enum EntryType {
 }
 
 struct Info {
-    entry_type: EntryType,
-    size: usize,
-    name: [char; NAME_MAX_LEN],
+    inner: lfs::lfs_info,
 }
 
 fn strlen(txt: *const cty::c_char) -> usize {
-
     if txt == ptr::null() {
         return 0;
     }
@@ -111,30 +108,6 @@ fn strlen(txt: *const cty::c_char) -> usize {
         i += 1;
     }
     return i;
-}
-
-// FIXME
-impl From<lfs::lfs_info> for Info {
-    fn from(lfs_info: lfs::lfs_info) -> Info {
-        let entry_type = match lfs_info.type_ as u32 {
-            lfs::lfs_type_LFS_TYPE_REG => EntryType::RegularFile,
-            lfs::lfs_type_LFS_TYPE_DIR => EntryType::Directory,
-            _ => {
-                unreachable!();
-            }
-        };
-
-        let len = strlen(lfs_info.name.as_ptr());
-        let name = unsafe { slice::from_raw_parts(lfs_info.name.as_ptr() as *const char, len) };
-
-        let mut info = Info {
-            entry_type: entry_type,
-            size: lfs_info.size as usize,
-            name: ['\0'; NAME_MAX_LEN],
-        };
-        info.name[..len].copy_from_slice(&name[..len]);
-        info
-    }
 }
 
 bitflags! {
@@ -239,7 +212,6 @@ impl<T: Storage> LittleFs<T> {
 
     /// Populate info for file or directory at specified path.
     pub fn stat(&mut self, path: &str, info: &mut Info) -> Result<(), FsError> {
-        let mut lfs_info: lfs::lfs_info = unsafe { mem::uninitialized() };
 
         let mut cstr = [0u8; NAME_MAX_LEN + 1];
         let len = cmp::min(NAME_MAX_LEN, path.len());
@@ -249,11 +221,10 @@ impl<T: Storage> LittleFs<T> {
             lfs::lfs_stat(
                 &mut self.lfs,
                 cstr.as_ptr() as *const cty::c_char,
-                &mut lfs_info as *mut _,
+                &mut info.inner,
             )
         };
 
-        *info = lfs_info.into();
         lfs_to_fserror(res)
     }
 
@@ -391,9 +362,7 @@ impl<T: Storage> LittleFs<T> {
 
     /// Read contents of a directory.
     pub fn dir_read(&mut self, dir: &mut Dir, info: &mut Info) -> Result<(), FsError> {
-        let mut lfs_info: lfs::lfs_info = unsafe { mem::uninitialized() };
-        let res = unsafe { lfs::lfs_dir_read(&mut self.lfs, &mut dir.inner, &mut lfs_info) };
-        *info = lfs_info.into();
+        let res = unsafe { lfs::lfs_dir_read(&mut self.lfs, &mut dir.inner, &mut info.inner) };
         lfs_to_fserror(res)
     }
 
@@ -723,18 +692,5 @@ mod tests {
 
         lfs.file_close(file).unwrap();
         lfs.unmount().unwrap();
-    }
-
-    #[test]
-    fn test_lfs_info_into_info() {
-        let lfs_info = lfs::lfs_info {
-            type_: lfs::lfs_type_LFS_TYPE_REG as u8,
-            size: 4,
-            name: [0; (NAME_MAX_LEN) + 1],
-        };
-
-        let info: Info = lfs_info.into();
-        assert_eq!(info.entry_type, EntryType::RegularFile);
-        assert_eq!(info.size, 4);
     }
 }
