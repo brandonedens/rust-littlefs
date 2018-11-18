@@ -1,3 +1,7 @@
+[![Build status](https://travis-ci.org/brandonedens/rust-littlefs.svg?branch=master)](https://travis-ci.org/brandonedens/rust-littlefs)
+[![littlefs crates.io](https://img.shields.io/crates/v/littlefs.svg)](https://crates.io/crates/littlefs)
+[![littlefs-sys crates.io](https://img.shields.io/crates/v/littlefs-sys.svg)](https://crates.io/crates/littlefs-sys)
+
 # `rust-littlefs`
 
 > Rust wrapper around the [Little Filesystem](https://github.com/ARMmbed/littlefs).
