@@ -1,5 +1,6 @@
 [package]
 name = "littlefs"
+description = "Rust interface to Little Filesystem"
 version = "0.1.0"
 authors = ["Brandon Edens <brandonedens@gmail.com>"]
 edition = "2018"

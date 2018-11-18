@@ -1,5 +1,6 @@
 [package]
 name = "littlefs-sys"
+description = "Build of upstream LittleFS with bindings"
 version = "0.1.0"
 authors = ["Brandon Edens <brandonedens@gmail.com>"]
 edition = "2018"
