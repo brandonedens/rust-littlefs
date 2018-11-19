@@ -88,8 +88,35 @@ enum EntryType {
     Directory,
 }
 
-struct Info {
+struct Info<'a> {
+    pub entry_type: EntryType,
+    pub size: usize,
+    pub name: &'a str,
     inner: lfs::lfs_info,
+}
+
+impl<'a> Info<'a> {
+    fn from_lfs_info(lfs_info: lfs::lfs_info) -> Self {
+        let entry_type = match lfs_info.type_ as u32 {
+            lfs::lfs_type_LFS_TYPE_REG => EntryType::RegularFile,
+            lfs::lfs_type_LFS_TYPE_DIR => EntryType::Directory,
+            _ => {
+                unreachable!();
+            }
+        };
+        let name_len = strlen(lfs_info.name.as_ptr());
+        let s = unsafe {
+            let u8slice = &*(&lfs_info.name as *const [i8] as *const [u8]);
+            core::str::from_utf8_unchecked(&u8slice[..name_len])
+        };
+
+        Info {
+            inner: lfs_info,
+            entry_type: entry_type,
+            size: lfs_info.size as usize,
+            name: s,
+        }
+    }
 }
 
 fn strlen(txt: *const cty::c_char) -> usize {
@@ -212,7 +239,6 @@ impl<T: Storage> LittleFs<T> {
 
     /// Populate info for file or directory at specified path.
     pub fn stat(&mut self, path: &str, info: &mut Info) -> Result<(), FsError> {
-
         let mut cstr = [0u8; NAME_MAX_LEN + 1];
         let len = cmp::min(NAME_MAX_LEN, path.len());
         cstr[..len].copy_from_slice(&path.as_bytes()[..len]);
@@ -692,5 +718,22 @@ mod tests {
 
         lfs.file_close(file).unwrap();
         lfs.unmount().unwrap();
+    }
+
+    #[test]
+    fn test_lfs_info() {
+        let mut lfs_info = lfs::lfs_info {
+            type_: lfs::lfs_type_LFS_TYPE_REG as u8,
+            size: 4,
+            name: [0; (NAME_MAX_LEN) + 1],
+        };
+        let filename = b"/foo.txt";
+        let u8slice = unsafe { &*(filename as *const [u8] as *const [i8]) };
+        lfs_info.name[..filename.len()].copy_from_slice(u8slice);
+
+        let info = Info::from_lfs_info(lfs_info);
+        assert_eq!(info.entry_type, EntryType::RegularFile);
+        assert_eq!(info.size, 4);
+        assert_eq!(info.name, "/foo.txt");
     }
 }
