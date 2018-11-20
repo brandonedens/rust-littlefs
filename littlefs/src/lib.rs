@@ -391,7 +391,7 @@ impl<T: Storage> LittleFs<T> {
     }
 
     /// Close a directory.
-    pub fn dir_close(&mut self, dir: &mut Dir) -> Result<(), FsError> {
+    pub fn dir_close(&mut self, mut dir: Dir) -> Result<(), FsError> {
         let res = unsafe { lfs::lfs_dir_close(&mut self.lfs, &mut dir.inner) };
         lfs_to_fserror(res)
     }
