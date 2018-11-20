@@ -156,14 +156,22 @@ struct File {
     inner: lfs::lfs_file_t,
 }
 
-struct Dir {
-    inner: lfs::lfs_dir_t,
-}
-
 impl Default for File {
     fn default() -> Self {
         File {
             buffer: [0u8; PROG_SIZE],
+            inner: unsafe { mem::uninitialized() },
+        }
+    }
+}
+
+struct Dir {
+    inner: lfs::lfs_dir_t,
+}
+
+impl Default for Dir {
+    fn default() -> Self {
+        Dir {
             inner: unsafe { mem::uninitialized() },
         }
     }
