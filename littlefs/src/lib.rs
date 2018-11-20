@@ -61,20 +61,11 @@ fn lfs_to_fserror(lfs_error: lfs::lfs_error) -> Result<(), FsError> {
 
 /// Convert an lfs error to a FsError.
 fn lfs_to_usize_fserror(lfs_error: lfs::lfs_error) -> Result<usize, FsError> {
-    match lfs_error {
-        lfs::lfs_error_LFS_ERR_IO => Err(FsError::Io),
-        lfs::lfs_error_LFS_ERR_CORRUPT => Err(FsError::Corrupt),
-        lfs::lfs_error_LFS_ERR_NOENT => Err(FsError::Noent),
-        lfs::lfs_error_LFS_ERR_EXIST => Err(FsError::Exist),
-        lfs::lfs_error_LFS_ERR_NOTDIR => Err(FsError::NotDir),
-        lfs::lfs_error_LFS_ERR_ISDIR => Err(FsError::IsDir),
-        lfs::lfs_error_LFS_ERR_NOTEMPTY => Err(FsError::NotEmpty),
-        lfs::lfs_error_LFS_ERR_BADF => Err(FsError::Badf),
-        lfs::lfs_error_LFS_ERR_FBIG => Err(FsError::FBig),
-        lfs::lfs_error_LFS_ERR_INVAL => Err(FsError::Inval),
-        lfs::lfs_error_LFS_ERR_NOSPC => Err(FsError::Nospc),
-        lfs::lfs_error_LFS_ERR_NOMEM => Err(FsError::Nomem),
-        val => Ok(val as usize),
+    let err = lfs_to_fserror(lfs_error);
+    match err {
+        Ok(()) => Ok(0),
+        Err(FsError::Unknown(val)) => Ok(val as usize),
+        Err(val) => Err(val),
     }
 }
 
