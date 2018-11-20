@@ -11,7 +11,7 @@ const BLOCK_SIZE: usize = 4096;
 const BLOCK_COUNT: usize = 32;
 const LOOKAHEAD: usize = 128;
 
-use core::{cmp, mem, ptr, slice};
+use core::{cmp, fmt, mem, ptr, slice};
 use littlefs_sys as lfs;
 
 const NAME_MAX_LEN: usize = lfs::LFS_NAME_MAX as usize;
@@ -90,14 +90,59 @@ enum EntryType {
     Directory,
 }
 
-struct Info<'a> {
-    pub entry_type: EntryType,
-    pub size: usize,
-    pub name: &'a str,
-    inner: lfs::lfs_info,
+struct Filename([u8; NAME_MAX_LEN + 1]);
+
+impl fmt::Debug for Filename {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Filename \"")?;
+        for b in self.0.iter() {
+            if *b == 0 {
+                break;
+            }
+            write!(f, "{}", *b as char)?;
+        }
+        write!(f, "\"")?;
+        Ok(())
+    }
 }
 
-impl<'a> Info<'a> {
+impl Default for Filename {
+    fn default() -> Self {
+        Filename([0; NAME_MAX_LEN + 1])
+    }
+}
+
+impl Filename {
+    fn from_c_char_array(c_name: *const cty::c_char) -> Self {
+        let len = strlen(c_name);
+        let name = unsafe { slice::from_raw_parts(c_name as *const u8, len) };
+        let mut filename = Filename::default();
+        filename.0[..len].copy_from_slice(&name[..len]);
+        filename
+    }
+}
+
+impl PartialEq<&str> for Filename {
+    fn eq(&self, other: &&str) -> bool {
+        let mut i = 0;
+        for s in other.chars() {
+            if self.0[i] != s as u8 {
+                return false;
+            }
+            i += 1;
+        }
+        return true;
+    }
+}
+
+#[derive(Debug)]
+struct Info {
+    pub entry_type: EntryType,
+    pub size: usize,
+    pub name: Filename,
+}
+
+impl Info {
     fn from_lfs_info(lfs_info: lfs::lfs_info) -> Self {
         let entry_type = match lfs_info.type_ as u32 {
             lfs::lfs_type_LFS_TYPE_REG => EntryType::RegularFile,
@@ -106,17 +151,11 @@ impl<'a> Info<'a> {
                 unreachable!();
             }
         };
-        let name_len = strlen(lfs_info.name.as_ptr());
-        let s = unsafe {
-            let u8slice = &*(&lfs_info.name as *const [i8] as *const [u8]);
-            core::str::from_utf8_unchecked(&u8slice[..name_len])
-        };
 
         Info {
-            inner: lfs_info,
             entry_type: entry_type,
             size: lfs_info.size as usize,
-            name: s,
+            name: Filename::from_c_char_array(lfs_info.name.as_ptr()),
         }
     }
 }
@@ -253,14 +292,16 @@ impl<T: Storage> LittleFs<T> {
         let len = cmp::min(NAME_MAX_LEN, path.len());
         cstr[..len].copy_from_slice(&path.as_bytes()[..len]);
 
+        let mut lfs_info: lfs::lfs_info = unsafe { mem::uninitialized() };
         let res = unsafe {
             lfs::lfs_stat(
                 &mut self.lfs,
                 cstr.as_ptr() as *const cty::c_char,
-                &mut info.inner,
+                &mut lfs_info,
             )
         };
 
+        *info = Info::from_lfs_info(lfs_info);
         lfs_to_fserror(res)
     }
 
@@ -397,9 +438,21 @@ impl<T: Storage> LittleFs<T> {
     }
 
     /// Read contents of a directory.
-    pub fn dir_read(&mut self, dir: &mut Dir, info: &mut Info) -> Result<(), FsError> {
-        let res = unsafe { lfs::lfs_dir_read(&mut self.lfs, &mut dir.inner, &mut info.inner) };
-        lfs_to_fserror(res)
+    pub fn dir_read(&mut self, dir: &mut Dir) -> Result<Option<Info>, FsError> {
+        let mut lfs_info = unsafe { mem::uninitialized() };
+        let res = unsafe { lfs::lfs_dir_read(&mut self.lfs, &mut dir.inner, &mut lfs_info) };
+        let err = lfs_to_fserror(res);
+        match err {
+            Err(FsError::Unknown(1)) => {
+                return Ok(Some(Info::from_lfs_info(lfs_info)));
+            }
+            Ok(()) => {
+                return Ok(None);
+            }
+            Err(err) => {
+                return Err(err);
+            }
+        }
     }
 
     /// Change the position within the directory.
@@ -567,6 +620,21 @@ mod tests {
         lfs.format().unwrap();
         lfs.mount().unwrap();
         lfs.mkdir("/foo").unwrap();
+
+        let mut dir = Default::default();
+        lfs.dir_open(&mut dir, "/").unwrap();
+        let info = lfs.dir_read(&mut dir).unwrap();
+        assert_eq!(info.unwrap().name, ".");
+        let info = lfs.dir_read(&mut dir).unwrap();
+        assert_eq!(info.unwrap().name, "..");
+        let info = lfs.dir_read(&mut dir).unwrap();
+        assert_eq!(info.unwrap().name, "foo");
+        let info = lfs.dir_read(&mut dir).unwrap();
+        assert!(info.is_none());
+        let info = lfs.dir_read(&mut dir).unwrap();
+        assert!(info.is_none());
+        lfs.dir_close(dir).unwrap();
+
         lfs.unmount().unwrap();
     }
 
