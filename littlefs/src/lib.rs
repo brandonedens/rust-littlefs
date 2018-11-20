@@ -323,11 +323,11 @@ impl<T: Storage> LittleFs<T> {
         file: &mut File,
         off: isize,
         whence: Whence,
-    ) -> Result<(), FsError> {
+    ) -> Result<usize, FsError> {
         let res = unsafe {
             lfs::lfs_file_seek(&mut self.lfs, &mut file.inner, off as i32, whence as i32)
         };
-        lfs_to_fserror(res)
+        lfs_to_usize_fserror(res)
     }
 
     pub fn file_truncate(&mut self, file: &mut File, size: usize) -> Result<(), FsError> {
