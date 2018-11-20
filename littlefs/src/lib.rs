@@ -790,6 +790,111 @@ mod tests {
     }
 
     #[test]
+    fn test_write_big_file() {
+        let storage = RamStorage::default();
+        let mut lfs = LittleFs::new(storage);
+        lfs.format().unwrap();
+        lfs.mount().unwrap();
+        let mut file = Default::default();
+        lfs.file_open(
+            &mut file,
+            "/foo.txt",
+            FileOpenFlags::RDWR | FileOpenFlags::CREAT,
+        )
+        .unwrap();
+        let mut bytes = [0u8; 256];
+        for i in 0..255 {
+            bytes[i] = i as u8;
+        }
+        for i in 0..128 {
+            let sz = lfs.file_write(&mut file, &bytes).unwrap();
+            assert_eq!(sz, 256);
+        }
+        lfs.file_close(file).unwrap();
+
+        lfs.unmount().unwrap();
+    }
+
+    #[test]
+    fn test_erase_big_file() {
+        let storage = RamStorage::default();
+        let mut lfs = LittleFs::new(storage);
+        lfs.format().unwrap();
+        lfs.mount().unwrap();
+        let mut file = Default::default();
+        lfs.file_open(
+            &mut file,
+            "/foo.txt",
+            FileOpenFlags::RDWR | FileOpenFlags::CREAT,
+        )
+        .unwrap();
+        let mut bytes = [0u8; 256];
+        for i in 0..255 {
+            bytes[i] = i as u8;
+        }
+        for i in 0..128 {
+            let sz = lfs.file_write(&mut file, &bytes).unwrap();
+            assert_eq!(sz, 256);
+        }
+        lfs.file_close(file).unwrap();
+
+        lfs.remove("/foo.txt").unwrap();
+        lfs.unmount().unwrap();
+    }
+
+    #[test]
+    fn test_rename_file() {
+        let storage = RamStorage::default();
+        let mut lfs = LittleFs::new(storage);
+        lfs.format().unwrap();
+        lfs.mount().unwrap();
+        let mut file = Default::default();
+        lfs.file_open(
+            &mut file,
+            "/foo.txt",
+            FileOpenFlags::RDWR | FileOpenFlags::CREAT,
+        )
+        .unwrap();
+        let mut bytes = [0u8; 256];
+        for i in 0..255 {
+            bytes[i] = i as u8;
+        }
+        for i in 0..128 {
+            let sz = lfs.file_write(&mut file, &bytes).unwrap();
+            assert_eq!(sz, 256);
+        }
+        lfs.file_close(file).unwrap();
+
+        let mut dir = Default::default();
+        lfs.dir_open(&mut dir, "/").unwrap();
+        let info = lfs.dir_read(&mut dir).unwrap();
+        assert_eq!(info.unwrap().name, ".");
+        let info = lfs.dir_read(&mut dir).unwrap();
+        assert_eq!(info.unwrap().name, "..");
+        let info = lfs.dir_read(&mut dir).unwrap();
+        assert_eq!(info.unwrap().name, "foo.txt");
+        let info = lfs.dir_read(&mut dir).unwrap();
+        assert!(info.is_none());
+        lfs.dir_close(dir).unwrap();
+
+        lfs.rename("/foo.txt", "/bar.txt").unwrap();
+
+        let mut dir = Default::default();
+        lfs.dir_open(&mut dir, "/").unwrap();
+        let info = lfs.dir_read(&mut dir).unwrap();
+        assert_eq!(info.unwrap().name, ".");
+        let info = lfs.dir_read(&mut dir).unwrap();
+        assert_eq!(info.unwrap().name, "..");
+        let info = lfs.dir_read(&mut dir).unwrap();
+        assert_eq!(info.unwrap().name, "bar.txt");
+        let info = lfs.dir_read(&mut dir).unwrap();
+        assert!(info.is_none());
+        lfs.dir_close(dir).unwrap();
+
+        lfs.unmount().unwrap();
+    }
+
+    #[test]
     fn test_lfs_info() {
         let mut lfs_info = lfs::lfs_info {
             type_: lfs::lfs_type_LFS_TYPE_REG as u8,
