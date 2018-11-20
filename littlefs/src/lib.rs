@@ -30,6 +30,7 @@ pub enum FsError {
     Inval,
     Nospc,
     Nomem,
+    Unknown(i32),
 }
 
 pub trait Storage {
@@ -53,7 +54,8 @@ fn lfs_to_fserror(lfs_error: lfs::lfs_error) -> Result<(), FsError> {
         lfs::lfs_error_LFS_ERR_INVAL => Err(FsError::Inval),
         lfs::lfs_error_LFS_ERR_NOSPC => Err(FsError::Nospc),
         lfs::lfs_error_LFS_ERR_NOMEM => Err(FsError::Nomem),
-        _ => Ok(()),
+        lfs::lfs_error_LFS_ERR_OK => Ok(()),
+        _ => Err(FsError::Unknown(lfs_error)),
     }
 }
 
