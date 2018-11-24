@@ -1,3 +1,13 @@
+//! Rust interface to Little Filesystem suitable for microcontrollers.
+//!
+//! This crate provides an interface to LittleFS a small filesystem written in C. Its sibling crate
+//! known as littlefs-sys builds and provides the bindings for the underlying C software.
+//!
+//! A full description of the underlying filesystem technology can be found at:
+//! https://os.mbed.com/blog/entry/littlefs-high-integrity-embedded-fs/
+//! https://github.com/ARMmbed/littlefs
+//!
+
 #![allow(dead_code)]
 #![allow(unused_variables)]
 #![no_std]
@@ -16,26 +26,44 @@ use littlefs_sys as lfs;
 
 const NAME_MAX_LEN: usize = lfs::LFS_NAME_MAX as usize;
 
+/// Definition of errors that might be returned by filesystem functionality.
 #[derive(Debug)]
 pub enum FsError {
+    /// Input / output error occurred.
     Io,
+    /// File was corrupt.
     Corrupt,
+    /// No entry found with that name.
     Noent,
+    /// File or directory already exists.
     Exist,
+    /// Path name is not a directory.
     NotDir,
+    /// Path specification is to a directory.
     IsDir,
+    /// Directory was not empty.
     NotEmpty,
+    /// Bad file descriptor.
     Badf,
+    /// File is too big.
     FBig,
+    /// Incorrect value specified to function.
     Inval,
+    /// No space left available for operation.
     Nospc,
+    /// No memory available for completing requirest.
     Nomem,
+    /// Unknown error occurred, integer code specified.
     Unknown(i32),
 }
 
+/// Definition of storage interface required by the filesystem.
 pub trait Storage {
+    /// Read data from the storage device.
     fn read(&self, off: usize, buf: &mut [u8]) -> Result<usize, FsError>;
+    /// Write data to the storage device.
     fn write(&mut self, off: usize, data: &[u8]) -> Result<usize, FsError>;
+    /// Erase data from the storage device.
     fn erase(&mut self, off: usize, len: usize) -> Result<usize, FsError>;
 }
 
@@ -59,7 +87,9 @@ fn lfs_to_fserror(lfs_error: lfs::lfs_error) -> Result<(), FsError> {
     }
 }
 
-/// Convert an lfs error to a FsError.
+/// Convert an lfs error to a FsError while encoding a result of usize.
+/// This return code is common for file system operations like:
+/// read, write, seek.
 fn lfs_to_usize_fserror(lfs_error: lfs::lfs_error) -> Result<usize, FsError> {
     let err = lfs_to_fserror(lfs_error);
     match err {
@@ -69,19 +99,27 @@ fn lfs_to_usize_fserror(lfs_error: lfs::lfs_error) -> Result<usize, FsError> {
     }
 }
 
-enum Whence {
+/// Definition of starting location for seeking within a file.
+/// * Set - seeks from the beginning of the file.
+/// * Cur - seeks from the current position in the file
+/// * End - seeks from the end of the file.
+pub enum Whence {
     Set = 0,
     Cur = 1,
     End = 2,
 }
 
+/// Definition for the type of directory entry which can be a file or directory.
 #[derive(Debug, PartialEq)]
-enum EntryType {
+pub enum EntryType {
+    /// Entry is a regular file.
     RegularFile,
+    /// Entry is a directory (location that holds other directories and files).
     Directory,
 }
 
-struct Filename([u8; NAME_MAX_LEN + 1]);
+/// Wrapper around an array of u8 representing a filename in ASCII encoding.
+pub struct Filename([u8; NAME_MAX_LEN + 1]);
 
 impl fmt::Debug for Filename {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -104,6 +142,7 @@ impl Default for Filename {
 }
 
 impl Filename {
+    /// Convert C character array to u8 filename.
     fn from_c_char_array(c_name: *const cty::c_char) -> Self {
         let len = strlen(c_name);
         let name = unsafe { slice::from_raw_parts(c_name as *const u8, len) };
@@ -126,14 +165,20 @@ impl PartialEq<&str> for Filename {
     }
 }
 
+/// Definition for filesystem info which is read through directory read calls or file stats.
 #[derive(Debug)]
-struct Info {
+pub struct Info {
+    /// Specification of the type of the info either a directory or file.
     pub entry_type: EntryType,
+    /// The size of the entry; only valid for files.
+    /// TODO this could be rolled into the entry information.
     pub size: usize,
+    /// The textural name of the file / directory.
     pub name: Filename,
 }
 
 impl Info {
+    /// Convert littlefs info struct into the one made available via the Rust interface.
     fn from_lfs_info(lfs_info: lfs::lfs_info) -> Self {
         let entry_type = match lfs_info.type_ as u32 {
             lfs::lfs_type_LFS_TYPE_REG => EntryType::RegularFile,
@@ -151,6 +196,8 @@ impl Info {
     }
 }
 
+/// Determine the length of a C string by searching for the null terminator. Note that this
+/// function will not operate properly if a string is not null terminated.
 fn strlen(txt: *const cty::c_char) -> usize {
     if txt == ptr::null() {
         return 0;
@@ -169,20 +216,32 @@ fn strlen(txt: *const cty::c_char) -> usize {
     return i;
 }
 
+/// Definition of file open flags which can be mixed and matched as appropriate. These definitions
+/// are reminiscent of the ones defined by POSIX.
 bitflags! {
-    struct FileOpenFlags: u32 {
+    pub struct FileOpenFlags: u32 {
+        /// Open file in read only mode.
         const RDONLY = 0x1;
+        /// Open file in write only mode.
         const WRONLY = 0x2;
+        /// Open file for reading and writing.
         const RDWR = Self::RDONLY.bits | Self::WRONLY.bits;
+        /// Create the file if it does not exist.
         const CREAT = 0x0100;
+        /// Fail if creating a file that already exists.
         const EXCL = 0x0200;
+        /// Truncate the file if it already exists.
         const TRUNC = 0x0400;
+        /// Open the file in append only mode.
         const APPEND = 0x0800;
     }
 }
 
-struct File {
+/// Definition of a file handle. File handles are used to interact with a file in the filesystem.
+pub struct File {
+    /// Required scratch pad memory used by LittleFS implementation.
     buffer: [u8; PROG_SIZE],
+    /// Handle to the data used by LittleFS to track file operations.
     inner: lfs::lfs_file_t,
 }
 
@@ -195,7 +254,9 @@ impl Default for File {
     }
 }
 
-struct Dir {
+/// Definition of a directory handle which is used to interact with a directory in the filesystem.
+pub struct Dir {
+    /// Handle to the data used by LittleFS to track directory operations.
     inner: lfs::lfs_dir_t,
 }
 
@@ -207,7 +268,9 @@ impl Default for Dir {
     }
 }
 
-struct LittleFs<T: Storage> {
+/// An instance of the Little filesystem. This struct defines the method of interacting with the
+/// filesystem and contains all of the data required for the C software.
+pub struct LittleFs<T: Storage> {
     storage: T,
     lfs_config: lfs::lfs_config,
     lfs: lfs::lfs_t,
@@ -216,8 +279,9 @@ struct LittleFs<T: Storage> {
     lookahead_buffer: [u8; LOOKAHEAD / 8],
 }
 
-// self.lfs_config.context: self as *mut _ as *mut cty::c_void,
+/// Interface to the LittleFS.
 impl<T: Storage> LittleFs<T> {
+    /// Create a new instance of the LittleFS.
     pub fn new(storage: T) -> Self {
         LittleFs {
             storage: storage,
@@ -484,6 +548,8 @@ impl<T: Storage> LittleFs<T> {
         }
     }
 
+    /// C callback interface used by LittleFS to read data with the lower level system below the
+    /// filesystem.
     extern "C" fn lfs_config_read(
         c: *const lfs::lfs_config,
         block: lfs::lfs_block_t,
@@ -502,6 +568,8 @@ impl<T: Storage> LittleFs<T> {
         0
     }
 
+    /// C callback interface used by LittleFS to program data with the lower level system below the
+    /// filesystem.
     extern "C" fn lfs_config_prog(
         c: *const lfs::lfs_config,
         block: lfs::lfs_block_t,
@@ -520,6 +588,8 @@ impl<T: Storage> LittleFs<T> {
         0
     }
 
+    /// C callback interface used by LittleFS to erase data with the lower level system below the
+    /// filesystem.
     extern "C" fn lfs_config_erase(
         c: *const lfs::lfs_config,
         block: lfs::lfs_block_t,
@@ -532,6 +602,8 @@ impl<T: Storage> LittleFs<T> {
         0
     }
 
+    /// C callback interface used by LittleFS to sync data with the lower level interface below the
+    /// filesystem. Note that this function currently does nothing.
     extern "C" fn lfs_config_sync(c: *const lfs::lfs_config) -> i32 {
         // Do nothing; we presume that data is synchronized.
         0
