@@ -1,7 +1,7 @@
 [package]
 name = "littlefs"
 description = "Rust interface to Little Filesystem"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Brandon Edens <brandonedens@gmail.com>"]
 edition = "2018"
 categories = ["embedded", "filesystem", "no-std"]
@@ -9,6 +9,6 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/brandonedens/rust-littlefs"
 
 [dependencies]
-littlefs-sys = { version = "0.1", path = "../littlefs-sys" }
+littlefs-sys = { version = "0.2", path = "../littlefs-sys" }
 bitflags = "1.0.4"
 cty = "0.1.5"
