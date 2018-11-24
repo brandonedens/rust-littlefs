@@ -1,6 +1,6 @@
 [![Build status](https://travis-ci.org/brandonedens/rust-littlefs.svg?branch=master)](https://travis-ci.org/brandonedens/rust-littlefs)
-[![littlefs crates.io](https://img.shields.io/crates/v/littlefs.svg)](https://crates.io/crates/littlefs)
-[![littlefs-sys crates.io](https://img.shields.io/crates/v/littlefs-sys.svg)](https://crates.io/crates/littlefs-sys)
+[![Crates.io](https://img.shields.io/crates/v/littlefs.svg)](https://crates.io/crates/littlefs)
+[![Docs.rs](https://docs.rs/littlefs/badge.svg)](https://docs.rs/littlefs)
 
 # `rust-littlefs`
 
