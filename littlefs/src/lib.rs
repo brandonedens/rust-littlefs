@@ -967,6 +967,48 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_big_file() {
+        let storage = RamStorage::default();
+        let mut lfs = LittleFs::new(storage);
+        lfs.format().unwrap();
+        lfs.mount().unwrap();
+        let mut file = Default::default();
+        lfs.file_open(
+            &mut file,
+            "/foo.txt",
+            FileOpenFlags::RDWR | FileOpenFlags::CREAT,
+        )
+        .unwrap();
+        let mut bytes = [0u8; 256];
+        for i in 0..256 {
+            bytes[i] = i as u8;
+        }
+        for i in 0..128 {
+            let sz = lfs.file_write(&mut file, &bytes).unwrap();
+            assert_eq!(sz, 256);
+        }
+        lfs.file_close(file).unwrap();
+
+        let mut file = Default::default();
+        lfs.file_open(&mut file, "/foo.txt", FileOpenFlags::RDWR)
+            .unwrap();
+        loop {
+            let mut buf = [0u8; 256];
+            let sz = lfs.file_read(&mut file, &mut buf).unwrap();
+            if sz == 0 {
+                break;
+            }
+            assert_eq!(sz, 256);
+            for i in 0..256 {
+                assert_eq!(buf[i], bytes[i]);
+            }
+        }
+        lfs.file_close(file).unwrap();
+
+        lfs.unmount().unwrap();
+    }
+
+    #[test]
     fn test_lfs_info() {
         let mut lfs_info = lfs::lfs_info {
             type_: lfs::lfs_type_LFS_TYPE_REG as u8,
