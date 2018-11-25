@@ -8,8 +8,8 @@
 //! https://github.com/ARMmbed/littlefs
 //!
 
-#![allow(dead_code)]
-#![allow(unused_variables)]
+#![deny(dead_code)]
+#![deny(unused_variables)]
 #![no_std]
 
 #[macro_use]
@@ -604,7 +604,7 @@ impl<T: Storage> LittleFs<T> {
 
     /// C callback interface used by LittleFS to sync data with the lower level interface below the
     /// filesystem. Note that this function currently does nothing.
-    extern "C" fn lfs_config_sync(c: *const lfs::lfs_config) -> i32 {
+    extern "C" fn lfs_config_sync(_c: *const lfs::lfs_config) -> i32 {
         // Do nothing; we presume that data is synchronized.
         0
     }
