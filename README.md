@@ -6,6 +6,14 @@
 
 > Rust wrapper around the [Little Filesystem](https://github.com/ARMmbed/littlefs).
 
+## Warning
+
+This crate has been flagged for usage of mem::initialized which is known to be
+unsound and has not been updated yet to use the newer mem::MaybeUninit
+interface. Recommend using the Littlefs v2 crate at:
+https://crates.io/crates/littlefs2
+in the interim.
+
 ## Description
 
 Software is divided into two pieces:
