@@ -1,9 +1,10 @@
 [package]
 name = "littlefs"
 description = "Rust interface to Little Filesystem"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["Brandon Edens <brandonedens@gmail.com>"]
 edition = "2018"
+readme = "../README.md"
 categories = ["embedded", "filesystem", "no-std"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/brandonedens/rust-littlefs"
